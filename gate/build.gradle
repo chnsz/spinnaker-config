@@ -1,0 +1,90 @@
+buildscript {
+  ext {
+    kotlinVersion = "1.2.41"
+  }
+  repositories {
+    maven {
+      url 'http://112.74.54.24:8000/repository/spinnaker-public/'
+    }
+    jcenter()
+    maven { url "https://plugins.gradle.org/m2/" }
+  }
+  dependencies {
+    classpath 'com.netflix.spinnaker.gradle:spinnaker-dev-plugin:5.2.2'
+    classpath "com.netflix.nebula:nebula-kotlin-plugin:${kotlinVersion}"
+    classpath 'com.github.jk1:gradle-license-report:1.8'
+    classpath "org.owasp:dependency-check-gradle:6.5.1"
+    classpath 'org.yaml:snakeyaml:1.23'
+    classpath "com.netflix.spinnaker.kork:kork-core:3.9.2"
+  }
+}
+
+allprojects {
+  apply plugin: 'spinnaker.base-project'
+  apply plugin: 'groovy'
+
+  ext {
+    spinnakerDependenciesVersion = '1.17.0'
+    if (project.hasProperty('spinnakerDependenciesVersion')) {
+      spinnakerDependenciesVersion = project.property('spinnakerDependenciesVersion')
+    }
+  }
+  repositories {
+    maven {
+      url 'http://112.74.54.24:8000/repository/spinnaker-public/'
+    }
+  }
+
+  def checkLocalVersions = [spinnakerDependenciesVersion: spinnakerDependenciesVersion]
+  if (ext.has('versions')) {
+    def extVers = ext.get('versions')
+    if (extVers instanceof Map) {
+      checkLocalVersions.putAll(extVers)
+    }
+  }
+
+  def localVersions = checkLocalVersions.findAll { it.value.endsWith('-SNAPSHOT') }
+  if (localVersions) {
+    logger.info("Enabling mavenLocal repo for $localVersions")
+    repositories {
+      mavenLocal()
+    }
+  }
+
+  spinnaker {
+    dependenciesVersion = spinnakerDependenciesVersion
+  }
+
+  dependencies {
+    compileOnly spinnaker.dependency("lombok")
+    spinnaker.group('test')
+  }
+
+  configurations.all {
+    exclude group: 'javax.servlet', module: 'servlet-api'
+    exclude group: 'javax.servlet', module: 'javax.servlet-api'
+  }
+
+  tasks.withType(JavaExec) {
+    if (System.getProperty('DEBUG', 'false') == 'true') {
+      jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8184'
+    }
+  }
+
+  group = "com.netflix.spinnaker.gate"
+
+  test {
+    testLogging {
+      exceptionFormat = 'full'
+    }
+  }
+
+  //c&p this because NetflixOss reverts it to 1.7 and ends up getting applied last..
+  project.plugins.withType(JavaBasePlugin) {
+    JavaPluginConvention convention = project.convention.getPlugin(JavaPluginConvention)
+    convention.sourceCompatibility = JavaVersion.VERSION_1_8
+    convention.targetCompatibility = JavaVersion.VERSION_1_8
+  }
+}
+
+defaultTasks ':gate-web:run'
